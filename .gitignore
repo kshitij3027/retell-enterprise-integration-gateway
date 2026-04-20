@@ -1,0 +1,138 @@
+# =========================
+# Secrets & local config
+# =========================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+.secrets/
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# Type checkers / linters
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Alembic local scratch
+*.sqlite
+*.sqlite3
+*.db
+
+# =========================
+# Node / JavaScript (tooling: helper scripts, Postman)
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.yarn/
+.pnpm-store/
+package-lock.json.bak
+
+# Build output (if any JS tooling emits it)
+.next/
+out/
+.turbo/
+.parcel-cache/
+
+# =========================
+# Docker / runtime
+# =========================
+*.pid
+*.sock
+docker-volumes/
+pgdata/
+postgres-data/
+
+# =========================
+# Observability / traces / logs
+# =========================
+*.log
+logs/
+jaeger-data/
+traces/
+
+# =========================
+# ngrok
+# =========================
+ngrok
+ngrok.yml
+.ngrok2/
+
+# =========================
+# IDE / editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+.windsurf/
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Local scratch
+# =========================
+tmp/
+.tmp/
+scratch/
+.scratch/

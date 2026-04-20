@@ -1,0 +1,42 @@
+# --- Web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# --- Database (Postgres + async) ---
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# --- HTTP client for CRM adapters ---
+httpx==0.28.1
+
+# --- Salesforce adapter (reference CRMAdapter impl) ---
+simple-salesforce==1.12.6
+
+# --- Reliability: bounded in-process retry ---
+tenacity==9.0.0
+
+# --- Security: HMAC signature verification ---
+cryptography==44.0.0
+
+# --- Observability: structured logs + OTel traces to Jaeger ---
+structlog==24.4.0
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
+
+# --- PII redaction helpers ---
+phonenumbers==8.13.52
+
+# --- Dev / test ---
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+respx==0.22.0
+ruff==0.8.4
+mypy==1.13.0
