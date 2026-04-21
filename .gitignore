@@ -136,3 +136,11 @@ tmp/
 .tmp/
 scratch/
 .scratch/
+project_requirements.md
+
+# =========================
+# Local-only: plan, instructions, agent configs
+# =========================
+plan.md
+CLAUDE.md
+.claude/
