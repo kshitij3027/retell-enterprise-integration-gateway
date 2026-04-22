@@ -63,7 +63,8 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      REIG_DATABASE_URL: postgresql://reig:reig@localhost:5432/reig
+      REIG_DATABASE_URL: postgresql://reig_app:reig_app@localhost:5432/reig
+      REIG_ADMIN_DATABASE_URL: postgresql://reig:reig@localhost:5432/reig
       REIG_ENCRYPTION_KEY: ci_only_not_a_real_key_0000000000
       REIG_RETELL_API_KEY: ci_retell_placeholder
       REIG_SFDC_CLIENT_ID: ci_sfdc_client_placeholder
@@ -82,6 +83,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
           PGPASSWORD=reig psql -h localhost -U reig -d reig -f migrations/0001_initial.sql
+          PGPASSWORD=reig psql -h localhost -U reig -d reig -f migrations/0002_api_keys_bootstrap_policy.sql
       - name: pytest
         run: pytest -q
 
@@ -95,7 +97,7 @@ jobs:
       - name: Create stub .env for compose
         run: |
           cat > .env <<'EOF'
-          REIG_DATABASE_URL=postgresql://reig:reig@db:5432/reig
+          REIG_DATABASE_URL=postgresql://reig_app:reig_app@db:5432/reig
           REIG_ENCRYPTION_KEY=ci_only_not_a_real_key_0000000000
           REIG_RETELL_API_KEY=ci_retell_placeholder
           REIG_SFDC_CLIENT_ID=ci_sfdc_client_placeholder
