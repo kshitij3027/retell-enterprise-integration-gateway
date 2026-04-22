@@ -1,0 +1,69 @@
+# REIG — local + CI stack.
+# Three services: api (FastAPI), db (Postgres 16 w/ RLS), jaeger (all-in-one).
+# Postgres auto-runs any .sql file dropped in /docker-entrypoint-initdb.d on
+# FIRST boot only — that's how migrations/0001_initial.sql gets applied.
+# If you ever change the schema, `make clean` to drop the volume and re-init.
+
+networks:
+  reig_default:
+    driver: bridge
+
+volumes:
+  pgdata:
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: reig
+      POSTGRES_PASSWORD: reig
+      POSTGRES_DB: reig
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reig -d reig"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - reig_default
+    ports:
+      - "5432:5432"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+    networks:
+      - reig_default
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reig-api:local
+    env_file:
+      - .env
+    environment:
+      # compose network DNS — override the local-dev default that would point
+      # at localhost. .env values win for everything else.
+      REIG_DATABASE_URL: "postgresql://reig:reig@db:5432/reig"
+      REIG_OTEL_ENDPOINT: "http://jaeger:4317"
+    depends_on:
+      db:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    networks:
+      - reig_default
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000

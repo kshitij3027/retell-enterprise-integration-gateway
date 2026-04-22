@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs on the same ref when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: ruff check
+        run: ruff check .
+
+  typecheck:
+    name: mypy --strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: mypy
+        # adapters/ lands in C5; for now restrict strict check to app/.
+        run: mypy --strict app/
+
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reig
+          POSTGRES_PASSWORD: reig
+          POSTGRES_DB: reig
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reig -d reig"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      REIG_DATABASE_URL: postgresql://reig:reig@localhost:5432/reig
+      REIG_ENCRYPTION_KEY: ci_only_not_a_real_key_0000000000
+      REIG_RETELL_API_KEY: ci_retell_placeholder
+      REIG_SFDC_CLIENT_ID: ci_sfdc_client_placeholder
+      REIG_SFDC_CLIENT_SECRET: ci_sfdc_secret_placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Apply migrations
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=reig psql -h localhost -U reig -d reig -f migrations/0001_initial.sql
+      - name: pytest
+        run: pytest -q
+
+  smoke:
+    name: docker compose smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Create stub .env for compose
+        run: |
+          cat > .env <<'EOF'
+          REIG_DATABASE_URL=postgresql://reig:reig@db:5432/reig
+          REIG_ENCRYPTION_KEY=ci_only_not_a_real_key_0000000000
+          REIG_RETELL_API_KEY=ci_retell_placeholder
+          REIG_SFDC_CLIENT_ID=ci_sfdc_client_placeholder
+          REIG_SFDC_CLIENT_SECRET=ci_sfdc_secret_placeholder
+          REIG_LOG_LEVEL=INFO
+          EOF
+      - name: Boot stack
+        run: docker compose up -d --build
+      - name: Wait for /healthz (90s cap)
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:8000/healthz; then
+              echo "\nhealthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAILED: /healthz never returned 200"
+          docker compose logs
+          exit 1
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
