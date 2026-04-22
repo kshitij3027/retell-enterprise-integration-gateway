@@ -201,6 +201,61 @@ async def two_tenants(db_pool: Any) -> AsyncIterator[tuple[UUID, UUID]]:
 
 
 @pytest.fixture
+async def one_tenant(db_pool: Any) -> AsyncIterator[UUID]:
+    """Create one fresh tenant for the test; delete after.
+
+    Shorter-form companion to `two_tenants` for tests that only exercise
+    a single-tenant flow (e.g. webhook signature tests). Goes through
+    the admin connection for seed + cleanup, same as the two-tenant
+    fixture.
+    """
+    tenant_id = await _insert_tenant("T_webhook", "consumer-lending")
+    try:
+        yield tenant_id
+    finally:
+        await _cleanup_tenant(tenant_id)
+
+
+async def read_audit_rows(
+    tenant_id: UUID | None = None,
+    event_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read audit_log rows via the admin connection.
+
+    Admin role bypasses RLS (owner role), so callers can scope by
+    tenant_id explicitly if they want — useful for asserting that
+    signature failures for a claimed tenant landed the expected row.
+
+    Args:
+        tenant_id: If non-None, filter to rows with this tenant_id.
+        event_type: If non-None, filter to this event_type.
+
+    Returns:
+        List of dict-ified rows ordered created_at DESC.
+    """
+    conn = await _admin_connect()
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if tenant_id is not None:
+            params.append(tenant_id)
+            clauses.append(f"tenant_id = ${len(params)}")
+        if event_type is not None:
+            params.append(event_type)
+            clauses.append(f"event_type = ${len(params)}")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = await conn.fetch(
+            "SELECT tenant_id, event_type, call_id, actor, payload, "
+            "trace_id, source_ip, created_at "
+            f"FROM audit_log{where} ORDER BY created_at DESC",
+            *params,
+        )
+        return [dict(r) for r in rows]
+    finally:
+        await conn.close()
+
+
+@pytest.fixture
 async def two_tenants_with_keys(
     db_pool: Any,
 ) -> AsyncIterator[tuple[UUID, UUID, str, str]]:

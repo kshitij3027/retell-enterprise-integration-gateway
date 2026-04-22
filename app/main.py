@@ -1,13 +1,14 @@
 """FastAPI application factory.
 
-Responsibilities as of C2:
+Responsibilities as of C3:
   * configure structured logging
   * open an asyncpg pool on startup, close on shutdown
   * install the TenantResolutionMiddleware (CR-5)
   * mount the /healthz + /readyz router
   * mount the /admin router (tenant + API-key management)
+  * mount the /webhooks/retell router (signature verify — CR-1, CR-2)
 
-Webhook and tool routes are added in C3+.
+Dedup + routing + PII + adapter dispatch are added in C4+.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.logging import configure_logging, get_logger
 from app.middleware import TenantResolutionMiddleware
-from app.routes import admin, health
+from app.routes import admin, health, webhooks
 
 log = get_logger(__name__)
 
@@ -69,3 +70,4 @@ app.add_middleware(TenantResolutionMiddleware)
 # --- Routers ---
 app.include_router(health.router)
 app.include_router(admin.router)
+app.include_router(webhooks.router)

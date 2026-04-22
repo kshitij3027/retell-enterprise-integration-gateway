@@ -1,0 +1,10 @@
+{
+  "event": "call_analyzed",
+  "call": {
+    "call_id": "call_test_001",
+    "from_number": "+14155551234",
+    "to_number": "+14155559876",
+    "agent_id": "agent_test",
+    "transcript": "Hello, my SSN is 123-45-6789."
+  }
+}
