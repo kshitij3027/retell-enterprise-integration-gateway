@@ -33,6 +33,7 @@ RUN python -m spacy download en_core_web_lg
 COPY app/ ./app/
 COPY migrations/ ./migrations/
 COPY tests/ ./tests/
+COPY scripts/ ./scripts/
 COPY pyproject.toml ./
 
 # Expose the uvicorn port. The actual CMD is set by docker-compose.

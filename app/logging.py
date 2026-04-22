@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import cast
 
 import structlog
 
@@ -46,4 +47,6 @@ def configure_logging(level: str = "INFO") -> None:
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Return a bound logger. Prefer module-level loggers: `log = get_logger(__name__)`."""
-    return structlog.get_logger(name)  # type: ignore[return-value]
+    # structlog.get_logger is untyped upstream (returns Any). Cast to our
+    # declared return type so strict mypy sees a concrete BoundLogger.
+    return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name))

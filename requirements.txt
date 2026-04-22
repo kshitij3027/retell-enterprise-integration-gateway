@@ -20,6 +20,13 @@ retell-sdk==4.26.0
 # --- Reliability: bounded in-process retry ---
 tenacity==9.0.0
 
+# --- CLI for tenant / key bootstrap (scripts/cli.py) ---
+# Typer 0.16+ is the first release compatible with click 8.3 — earlier
+# releases call Parameter.make_metavar() without the `ctx` argument that
+# click 8.3 now requires, breaking `--help` while subcommands still work.
+# Let typer's dep resolver own the click pin.
+typer==0.16.0
+
 # --- Security: HMAC signature verification ---
 cryptography==44.0.0
 

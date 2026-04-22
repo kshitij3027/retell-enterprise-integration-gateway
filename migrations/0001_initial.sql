@@ -8,10 +8,14 @@
 --
 -- Every tenant-scoped table has Row-Level Security with a policy that reads
 -- `current_setting('app.tenant_id', true)`. The `true` second arg means the
--- setting is OPTIONAL — if missing, `current_setting` returns NULL, the
--- `tenant_id = NULL::uuid` comparison is NULL, and NULL != TRUE — so the
--- policy default-denies instead of throwing. This is the critical RLS
--- default-deny pattern; see CR-5.
+-- setting is OPTIONAL — if missing, `current_setting` returns NULL. But
+-- Postgres GUCs revert to the EMPTY STRING (not NULL) after a committed
+-- `SET LOCAL` on a pooled connection — and `''::uuid` raises
+-- InvalidTextRepresentationError. We therefore wrap with
+-- `NULLIF(current_setting(...), '')` so both "unset" and "reverted" paths
+-- normalise to NULL, making `tenant_id = NULL` evaluate to NULL (not TRUE)
+-- and default-denying cleanly. This is the critical RLS default-deny
+-- pattern; see CR-5.
 --
 -- audit_log and processed_events additionally have UPDATE/DELETE revoked from
 -- reig_app so they are append-only at the SQL layer (CR-14).
@@ -155,23 +159,27 @@ ALTER TABLE crm_writes       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credentials      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log        ENABLE ROW LEVEL SECURITY;
 
+-- api_keys has its own policy form (bootstrap mode) — see migration 0002.
+-- This placeholder policy is replaced there; kept here only so RLS isn't
+-- left enabled with NO policy applied (which default-denies everything
+-- including the CLI's bootstrap INSERTs at fresh-init time).
 CREATE POLICY api_keys_tenant_isolation ON api_keys
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 CREATE POLICY calls_tenant_isolation ON calls
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 CREATE POLICY processed_events_tenant_isolation ON processed_events
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 CREATE POLICY crm_writes_tenant_isolation ON crm_writes
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 CREATE POLICY credentials_tenant_isolation ON credentials
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 CREATE POLICY audit_log_tenant_isolation ON audit_log
-    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 -- =========================================================================
 -- Permissions for the application role

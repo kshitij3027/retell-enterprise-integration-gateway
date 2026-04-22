@@ -32,7 +32,7 @@ async def healthz() -> dict[str, str]:
 @router.get("/readyz")
 async def readyz(
     response: Response,
-    pool: "Pool" = Depends(get_pool),
+    pool: Pool = Depends(get_pool),
 ) -> dict[str, str]:
     """DB pool is ready. Returns 503 if we can't SELECT 1."""
     try:

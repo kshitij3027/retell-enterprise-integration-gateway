@@ -52,7 +52,7 @@ services:
     environment:
       # compose network DNS — override the local-dev default that would point
       # at localhost. .env values win for everything else.
-      REIG_DATABASE_URL: "postgresql://reig:reig@db:5432/reig"
+      REIG_DATABASE_URL: "postgresql://reig_app:reig_app@db:5432/reig"
       REIG_OTEL_ENDPOINT: "http://jaeger:4317"
     depends_on:
       db:
