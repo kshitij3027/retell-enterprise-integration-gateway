@@ -2,8 +2,9 @@
 
 audit_log is a tamper-evident journal of every security-relevant event —
 signature failures, dedup hits, adapter upserts, OAuth callbacks, etc.
-The full event-type catalog lands in C4; this module is the write path
-and only needs to cover `signature.failed` for C3.
+The event-type catalog (below) is the canonical list of string values
+that flow into `audit_log.event_type`; string literals in the codebase
+should reference these constants rather than inlining the name.
 
 Design notes:
 
@@ -30,7 +31,7 @@ Design notes:
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from app.logging import get_logger
@@ -39,6 +40,30 @@ if TYPE_CHECKING:
     import asyncpg
 
 log = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Event-type catalog (CR-14).
+# Every string that lands in audit_log.event_type should come from this
+# block. Keep alphabetized within each sub-group. Referenced from:
+#   * app/routes/webhooks.py (signature + dedup + routing)
+#   * app/dedup.py           (no — dedup.py only reports, webhooks writes)
+#   * C5+ adapter paths      (upsert.ok, upsert.failed, etc. — TBD)
+# ---------------------------------------------------------------------------
+
+# Signature verification (C3).
+SIGNATURE_FAILED: Final[str] = "signature.failed"
+
+# Dedup / idempotency (C4).
+DEDUP_HIT: Final[str] = "dedup.hit"
+DEDUP_MISS: Final[str] = "dedup.miss"
+
+# Webhook reception — one per Retell event type (C4).
+WEBHOOK_RECEIVED_CALL_STARTED: Final[str] = "webhook.received.call_started"
+WEBHOOK_RECEIVED_CALL_ENDED: Final[str] = "webhook.received.call_ended"
+WEBHOOK_RECEIVED_CALL_ANALYZED: Final[str] = "webhook.received.call_analyzed"
+WEBHOOK_RECEIVED_UNKNOWN: Final[str] = "webhook.received.unknown"
+WEBHOOK_RECEIVED_MALFORMED_JSON: Final[str] = "webhook.received.malformed_json"
 
 
 async def write_audit(
