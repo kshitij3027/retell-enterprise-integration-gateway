@@ -30,6 +30,7 @@ writing anything.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import secrets
@@ -67,11 +68,12 @@ def _sign_state(tenant_id: UUID, nonce: str, secret: str) -> str:
     return f"{msg}.{digest}"
 
 
-def _verify_state(state: str, secret: str, max_age_s: int = 600) -> UUID:
-    """Verify a signed state and return the tenant_id it carried.
+def _verify_state(state: str, secret: str, max_age_s: int = 600) -> tuple[UUID, str]:
+    """Verify a signed state. Returns `(tenant_id, nonce)`.
 
-    Raises HTTPException(400) on any validation failure (bad shape,
-    digest mismatch, or age > max_age_s).
+    The nonce doubles as the PKCE code_verifier — the callback needs it
+    to complete the token exchange. Raises HTTPException(400) on any
+    validation failure (bad shape, digest mismatch, or age > max_age_s).
     """
     parts = state.split(".")
     if len(parts) != 4:
@@ -92,7 +94,7 @@ def _verify_state(state: str, secret: str, max_age_s: int = 600) -> UUID:
     if abs(int(time.time()) - ts) > max_age_s:
         raise HTTPException(status_code=400, detail="invalid state: expired")
     try:
-        return UUID(tenant_id_str)
+        return UUID(tenant_id_str), nonce
     except ValueError as e:
         raise HTTPException(
             status_code=400, detail="invalid state: tenant_id"
@@ -117,8 +119,17 @@ async def authorize(
             detail="REIG_SFDC_CALLBACK_URL not configured",
         )
 
-    nonce = secrets.token_urlsafe(16)
-    state = _sign_state(tenant_id, nonce, settings.encryption_key)
+    # The `nonce` in the state doubles as the PKCE code_verifier — SFDC
+    # External Client Apps require PKCE (code_challenge + S256). We embed
+    # the verifier in the HMAC-signed state so the callback recovers it
+    # without server-side session storage, and the HMAC prevents tampering.
+    code_verifier = secrets.token_urlsafe(64)  # 43-128 chars per RFC 7636
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    state = _sign_state(tenant_id, code_verifier, settings.encryption_key)
 
     sfdc_params = {
         "response_type": "code",
@@ -126,6 +137,8 @@ async def authorize(
         "redirect_uri": settings.sfdc_callback_url,
         "scope": "api refresh_token",
         "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     target = f"{settings.sfdc_login_url}/services/oauth2/authorize?{urlencode(sfdc_params)}"
     log.info("oauth.authorize.begin", tenant_id=str(tenant_id))
@@ -151,9 +164,11 @@ async def callback(
     `return_to` redirect; v1 stays terminal for simplicity.
     """
     settings = get_settings()
-    tenant_id = _verify_state(state, settings.encryption_key)
+    tenant_id, code_verifier = _verify_state(state, settings.encryption_key)
 
     # Exchange the authorization code for access + refresh tokens.
+    # code_verifier is the PKCE counterpart to the code_challenge we sent
+    # at /authorize — SFDC External Client Apps require it.
     token_url = f"{settings.sfdc_login_url}/services/oauth2/token"
     data = {
         "grant_type": "authorization_code",
@@ -161,6 +176,7 @@ async def callback(
         "client_secret": settings.sfdc_client_secret,
         "redirect_uri": settings.sfdc_callback_url,
         "code": code,
+        "code_verifier": code_verifier,
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(token_url, data=data)
