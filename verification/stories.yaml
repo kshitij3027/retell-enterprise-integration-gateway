@@ -1,0 +1,50 @@
+stories:
+  - name: "Post-call pipeline produces redacted Salesforce Lead with Jaeger trace"
+    # Covers SC-1 (code path), SC-2 (dedup), SC-3 (tamper), SC-5 (PII), SC-6 (trace)
+    url: "http://localhost:16686"
+    workflow: |
+      Run the command: make fire-webhook PAYLOAD=tests/fixtures/valid_call_analyzed_with_pii.json TENANT={{TENANT_LENDING_ID}}
+      Navigate to http://localhost:16686
+      Wait for the page to load the Jaeger UI
+      Select the service "retell-integration-gateway" in the Service dropdown
+      Click the "Find Traces" button
+      Verify at least one trace is visible in the results
+      Click the most recent trace
+      Verify that spans named webhook.received, signature.verified, dedup.checked, pii.redacted, adapter.upsert, and audit.written are all present
+      Click on the webhook.received span
+      Verify that the attributes panel shows retell.call_id equal to {{TEST_CALL_ID}}
+      Verify that the attributes panel shows tenant.id equal to {{TENANT_LENDING_ID}}
+      Click on the adapter.upsert span
+      Verify that the attributes panel shows sfdc.lead_id with a non-empty value
+      Navigate to {{SFDC_ORG_URL}}/lightning/o/Lead/list
+      If a sign-in form is visible, type {{SFDC_USERNAME}} in the username field and {{SFDC_PASSWORD}} in the password field and click Log In
+      In the list view search bar, type {{TEST_CALL_ID}} and press Enter
+      Verify exactly one Lead row is visible
+      Click the Lead row to open the detail view
+      Verify the Description field contains the text <US_SSN_REDACTED>
+      Verify the Description field contains the text <CREDIT_CARD_REDACTED>
+      Verify the Description field does not contain the digit sequence 521-45-6789
+      Verify the Description field does not contain the digit sequence 4111 1111 1111 1111
+      Run the command: make fire-webhook PAYLOAD=tests/fixtures/valid_call_analyzed_with_pii.json TENANT={{TENANT_LENDING_ID}} TIMES=4
+      Reload the Salesforce Leads list view
+      Verify still exactly one Lead row with External_Call_Id__c equal to {{TEST_CALL_ID}}
+      Run the command: make fire-webhook PAYLOAD=tests/fixtures/valid_call_analyzed_with_pii.json TENANT={{TENANT_LENDING_ID}} TAMPER=1
+      Verify the command output contains HTTP 401
+      Reload the Salesforce Leads list view
+      Verify still exactly one Lead row with External_Call_Id__c equal to {{TEST_CALL_ID}}
+
+  - name: "Inbound-call hydration greets seeded contact by name"
+    # Covers SC-8
+    url: "http://localhost:16686"
+    workflow: |
+      Run the command: make fire-inbound TENANT={{TENANT_LENDING_ID}} PHONE={{SEEDED_PHONE}}
+      Verify the command output contains caller_name equal to {{SEEDED_CONTACT_NAME}}
+      Navigate to http://localhost:16686
+      Select the service "retell-integration-gateway" in the Service dropdown
+      In the Operation dropdown select inbound.hydrate
+      Click Find Traces
+      Verify at least one trace is visible
+      Click the most recent trace
+      Verify the span tree contains sfdc.lookup.by_phone
+      Click on sfdc.lookup.by_phone
+      Verify the attributes panel shows a non-empty lead_id attribute

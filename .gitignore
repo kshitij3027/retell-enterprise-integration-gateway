@@ -144,3 +144,12 @@ project_requirements.md
 plan.md
 CLAUDE.md
 .claude/
+
+# =========================
+# Demo artifacts (C10)
+# =========================
+# Raw API keys minted by scripts/seed.py — never commit.
+.env.local.seeds
+# Per-operator bowser-qa config; only the checked-in .env.example template
+# should exist in git.
+verification/.env
