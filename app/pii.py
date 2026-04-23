@@ -35,12 +35,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.logging import get_logger
+from app.tracing import get_tracer
 
 if TYPE_CHECKING:
     from presidio_analyzer import AnalyzerEngine
     from presidio_anonymizer import AnonymizerEngine
 
 log = get_logger(__name__)
+_tracer = get_tracer("reig.pii")
 
 
 # Module-level singletons. Populated by `init_pii()` on startup; None until
@@ -194,36 +196,40 @@ def redact(
     else:
         entity_list = list(entities)
 
-    analyzer_results = _analyzer.analyze(
-        text=text,
-        entities=entity_list,
-        language="en",
-    )
+    with _tracer.start_as_current_span("pii.redacted") as span:
+        span.set_attribute("pii.input_length", len(text))
+        analyzer_results = _analyzer.analyze(
+            text=text,
+            entities=entity_list,
+            language="en",
+        )
 
-    # Build one OperatorConfig per entity type — replace the span with a
-    # deterministic placeholder. Presidio will fall back to the "default"
-    # operator for any entity it detects that isn't in `operators`, but
-    # we've already narrowed the analyzer to `entity_list` so there
-    # should be no such spans.
-    from presidio_anonymizer.entities import OperatorConfig
+        # Build one OperatorConfig per entity type — replace the match
+        # with `<TYPE_REDACTED>`. Presidio falls back to a default
+        # operator for any entity not in `operators`, but we've already
+        # narrowed the analyzer to `entity_list` so there shouldn't be any.
+        from presidio_anonymizer.entities import OperatorConfig
 
-    operators = {
-        ent: OperatorConfig("replace", {"new_value": f"<{ent}_REDACTED>"})
-        for ent in entity_list
-    }
+        operators = {
+            ent: OperatorConfig("replace", {"new_value": f"<{ent}_REDACTED>"})
+            for ent in entity_list
+        }
 
-    # Presidio ships two RecognizerResult classes with identical shape but
-    # different import paths; mypy can't unify them. The runtime list is
-    # interchangeable — cast away the declared-type mismatch.
-    anon_result = _anonymizer.anonymize(
-        text=text,
-        analyzer_results=analyzer_results,  # type: ignore[arg-type]
-        operators=operators,
-    )
+        # Presidio ships two RecognizerResult classes with identical shape
+        # but different import paths; mypy can't unify them. Runtime lists
+        # are interchangeable — cast away the declared-type mismatch.
+        anon_result = _anonymizer.anonymize(
+            text=text,
+            analyzer_results=analyzer_results,  # type: ignore[arg-type]
+            operators=operators,
+        )
 
-    counts: dict[str, int] = dict(
-        Counter(r.entity_type for r in analyzer_results)
-    )
+        counts: dict[str, int] = dict(
+            Counter(r.entity_type for r in analyzer_results)
+        )
+        span.set_attribute("pii.entities_removed", len(analyzer_results))
+        span.set_attribute("pii.output_length", len(anon_result.text))
+
     log.debug(
         "pii.redact.ok",
         entities_removed=len(analyzer_results),

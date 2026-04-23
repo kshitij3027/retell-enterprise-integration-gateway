@@ -35,11 +35,13 @@ from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from app.logging import get_logger
+from app.tracing import get_tracer
 
 if TYPE_CHECKING:
     import asyncpg
 
 log = get_logger(__name__)
+_tracer = get_tracer("reig.audit")
 
 
 # ---------------------------------------------------------------------------
@@ -107,18 +109,38 @@ async def write_audit(
         None. Errors bubble — callers in a BackgroundTask context will
         see them in logs, not on the request path.
     """
-    await conn.execute(
-        "INSERT INTO audit_log "
-        "(tenant_id, event_type, call_id, actor, payload, trace_id, source_ip) "
-        "VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)",
-        tenant_id,
-        event_type,
-        call_id,
-        actor,
-        json.dumps(payload, default=str),
-        trace_id,
-        source_ip,
-    )
+    # Pull the active trace id when the caller passed the placeholder "0"
+    # — this is the seam that lets CR-13 "every audit row carries a
+    # trace_id" hold without every caller having to remember to pass it.
+    effective_trace_id = trace_id
+    if effective_trace_id in ("", "0"):
+        try:
+            from opentelemetry import trace as _otel_trace
+
+            span_ctx = _otel_trace.get_current_span().get_span_context()
+            if span_ctx.trace_id != 0:
+                effective_trace_id = format(span_ctx.trace_id, "032x")
+        except Exception:  # noqa: BLE001 — OTel not initialised yet
+            pass
+
+    with _tracer.start_as_current_span("audit.written") as span:
+        span.set_attribute("audit.event_type", event_type)
+        if tenant_id is not None:
+            span.set_attribute("tenant.id", str(tenant_id))
+        if call_id is not None:
+            span.set_attribute("retell.call_id", call_id)
+        await conn.execute(
+            "INSERT INTO audit_log "
+            "(tenant_id, event_type, call_id, actor, payload, trace_id, source_ip) "
+            "VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)",
+            tenant_id,
+            event_type,
+            call_id,
+            actor,
+            json.dumps(payload, default=str),
+            effective_trace_id,
+            source_ip,
+        )
     log.debug(
         "audit.written",
         event_type=event_type,

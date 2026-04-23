@@ -49,6 +49,7 @@ from adapters import register
 from adapters.base import LeadUpsertPayload, UpsertResult
 from adapters.errors import PermanentError, TransientError
 from app.logging import get_logger
+from app.tracing import get_tracer
 
 if TYPE_CHECKING:
     import asyncpg
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from app.config import Settings
 
 log = get_logger(__name__)
+_tracer = get_tracer("reig.salesforce")
 
 
 @register("salesforce")
@@ -208,6 +210,11 @@ class SalesforceAdapter:
                     and expires_epoch is not None
                     and expires_epoch - now_epoch > 60
                 ):
+                    from opentelemetry import trace as _otel_trace
+
+                    _otel_trace.get_current_span().set_attribute(
+                        "oauth.cached", True
+                    )
                     self._access_token = access
                     self._instance_url = instance_url
                     log.debug(
@@ -217,15 +224,20 @@ class SalesforceAdapter:
                     )
                     return
 
-                new_access, new_expires = await self._exchange_refresh_token(refresh)
-                await self._update_access_token(conn, new_access, new_expires)
-                self._access_token = new_access
-                self._instance_url = instance_url
-                log.info(
-                    "sfdc.authenticate.refreshed",
-                    tenant_id=str(self.tenant_id),
-                    expires_epoch=new_expires,
-                )
+                with _tracer.start_as_current_span("oauth.refreshed") as span:
+                    span.set_attribute("tenant.id", str(self.tenant_id))
+                    span.set_attribute("oauth.cached", False)
+                    new_access, new_expires = await self._exchange_refresh_token(
+                        refresh
+                    )
+                    await self._update_access_token(conn, new_access, new_expires)
+                    self._access_token = new_access
+                    self._instance_url = instance_url
+                    log.info(
+                        "sfdc.authenticate.refreshed",
+                        tenant_id=str(self.tenant_id),
+                        expires_epoch=new_expires,
+                    )
 
     def _classify_response(
         self, resp: httpx.Response
@@ -283,11 +295,24 @@ class SalesforceAdapter:
             f"/sobjects/Lead/External_Call_Id__c/{payload.external_call_id}"
         )
         sfdc_body = self._build_sfdc_body(payload)
-        resp = await client.patch(
-            url,
-            json=sfdc_body,
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+        with _tracer.start_as_current_span("adapter.upsert") as span:
+            span.set_attribute("tenant.id", str(self.tenant_id))
+            span.set_attribute("retell.call_id", payload.external_call_id)
+            span.set_attribute("sfdc.url", url)
+            resp = await client.patch(
+                url,
+                json=sfdc_body,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            span.set_attribute("http.status_code", resp.status_code)
+            if resp.status_code == 201:
+                try:
+                    record_id = resp.json().get("id") or payload.external_call_id
+                except Exception:  # noqa: BLE001 — opportunistic attribute
+                    record_id = payload.external_call_id
+                span.set_attribute("sfdc.lead_id", record_id)
+            elif resp.status_code == 204:
+                span.set_attribute("sfdc.lead_id", payload.external_call_id)
         return resp
 
     def _parse_success(

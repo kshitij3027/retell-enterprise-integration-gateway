@@ -33,8 +33,10 @@ import time
 from typing import NamedTuple
 
 from app.logging import get_logger
+from app.tracing import get_tracer
 
 log = get_logger(__name__)
+_tracer = get_tracer("reig.signature")
 
 # `v={digits},d={hex}` — whitespace-tolerant. Matches what Retell's SDK emits.
 _SIG_HEADER_RE = re.compile(r"^\s*v=(?P<ts>\d+)\s*,\s*d=(?P<digest>[0-9a-fA-F]+)\s*$")
@@ -82,6 +84,23 @@ def verify_retell_signature(
     pinpoints where the request failed, which makes forensics tractable
     when a tenant or attacker reports "my webhooks aren't delivering".
     """
+    with _tracer.start_as_current_span("signature.verified") as span:
+        result = _verify_inner(raw_body, signature_header, api_key, skew_seconds)
+        span.set_attribute("is_valid", result.is_valid)
+        if result.reason is not None:
+            span.set_attribute("signature.reason", result.reason)
+        if result.timestamp is not None:
+            span.set_attribute("signature.timestamp_ms", result.timestamp)
+        return result
+
+
+def _verify_inner(
+    raw_body: bytes,
+    signature_header: str | None,
+    api_key: str,
+    skew_seconds: int,
+) -> SignatureResult:
+    """Inner implementation — factored out so the span-wrap stays readable."""
     if signature_header is None or signature_header == "":
         return SignatureResult(is_valid=False, reason="missing_header", timestamp=None)
 

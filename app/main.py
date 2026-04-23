@@ -24,6 +24,7 @@ from app.logging import configure_logging, get_logger
 from app.middleware import TenantResolutionMiddleware
 from app.pii import init_pii
 from app.routes import admin, health, oauth, webhooks
+from app.tracing import init_tracing, instrument_fastapi
 
 log = get_logger(__name__)
 
@@ -40,6 +41,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     log.info("startup.begin", service=settings.otel_service_name)
+
+    # Wire OTel before asyncpg/httpx get imported from other modules so
+    # the instrumentors can patch at the right time. The OTLP endpoint
+    # points at Jaeger's gRPC collector in docker-compose; if it's
+    # unreachable the exporter logs warnings and drops spans rather than
+    # blocking the app.
+    init_tracing(settings.otel_service_name, settings.otel_endpoint)
 
     pool = await asyncpg.create_pool(
         dsn=settings.database_url,
@@ -69,6 +77,11 @@ app = FastAPI(
     description="Retell Enterprise Integration Gateway",
     lifespan=lifespan,
 )
+
+# --- OTel instrumentation of the app instance (CR-13) ---
+# Must happen after app=FastAPI(...) is constructed; safe before the
+# lifespan runs because it only attaches middleware to `app`.
+instrument_fastapi(app)
 
 # --- Middleware (order matters: outermost declared LAST) ---
 # TenantResolutionMiddleware gates every non-exempt request on X-API-Key.

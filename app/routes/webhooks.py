@@ -73,11 +73,13 @@ from app.dedup import claim_event
 from app.logging import get_logger
 from app.models.retell import RetellWebhookPayload
 from app.signature import verify_retell_signature
+from app.tracing import get_tracer
 
 if TYPE_CHECKING:
     from asyncpg.pool import Pool
 
 log = get_logger(__name__)
+_tracer = get_tracer("reig.webhooks")
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
@@ -186,6 +188,40 @@ async def retell_webhook(
     header_present = header is not None and header != ""
     source_ip = request.client.host if request.client is not None else None
 
+    # Parent span for the whole handler. Child spans fired by signature
+    # / dedup / pii / audit nest under this. ALL return paths below are
+    # inside this `with` block so the span is always ended properly.
+    with _tracer.start_as_current_span("webhook.received") as webhook_span:
+        webhook_span.set_attribute("tenant.id", str(tenant_id))
+        webhook_span.set_attribute("http.source_ip", source_ip or "unknown")
+        return await _handle_webhook(
+            tenant_id=tenant_id,
+            raw_body=raw_body,
+            header=header,
+            header_present=header_present,
+            source_ip=source_ip,
+            pool=pool,
+            settings=settings,
+            started_at=started_at,
+            background_tasks=background_tasks,
+            webhook_span=webhook_span,
+        )
+
+
+async def _handle_webhook(
+    *,
+    tenant_id: UUID,
+    raw_body: bytes,
+    header: str | None,
+    header_present: bool,
+    source_ip: str | None,
+    pool: Pool,
+    settings: Any,
+    started_at: float,
+    background_tasks: BackgroundTasks,
+    webhook_span: Any,
+) -> Response:
+    """Inner handler — factored out so the span `with` wraps cleanly."""
     # -- 1. HMAC signature verification (C3) --------------------------------
     sig_result = verify_retell_signature(
         raw_body=raw_body,
@@ -256,6 +292,8 @@ async def retell_webhook(
 
     event_type = payload.event
     call_id = payload.call.call_id
+    webhook_span.set_attribute("retell.call_id", call_id)
+    webhook_span.set_attribute("retell.event_type", event_type)
 
     # -- 3. Idempotent claim (C4) ------------------------------------------
     # Build the raw-payload dict ONCE so we can thread it into both the

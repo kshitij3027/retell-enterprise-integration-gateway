@@ -42,11 +42,13 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from app.logging import get_logger
+from app.tracing import get_tracer
 
 if TYPE_CHECKING:
     import asyncpg
 
 log = get_logger(__name__)
+_tracer = get_tracer("reig.dedup")
 
 
 @dataclass(frozen=True)
@@ -96,17 +98,22 @@ async def claim_event(
         DedupResult(status="miss", row_id=<uuid>) on first claim.
         DedupResult(status="hit", row_id=None)    on subsequent replays.
     """
-    row = await conn.fetchrow(
-        "INSERT INTO processed_events "
-        "(id, tenant_id, call_id, event_type, raw_payload, created_at) "
-        "VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, NOW()) "
-        "ON CONFLICT (tenant_id, call_id, event_type) DO NOTHING "
-        "RETURNING id",
-        tenant_id,
-        call_id,
-        event_type,
-        json.dumps(raw_payload, default=str),
-    )
+    with _tracer.start_as_current_span("dedup.checked") as span:
+        span.set_attribute("tenant.id", str(tenant_id))
+        span.set_attribute("retell.call_id", call_id)
+        span.set_attribute("retell.event_type", event_type)
+        row = await conn.fetchrow(
+            "INSERT INTO processed_events "
+            "(id, tenant_id, call_id, event_type, raw_payload, created_at) "
+            "VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, NOW()) "
+            "ON CONFLICT (tenant_id, call_id, event_type) DO NOTHING "
+            "RETURNING id",
+            tenant_id,
+            call_id,
+            event_type,
+            json.dumps(raw_payload, default=str),
+        )
+        span.set_attribute("dedup.status", "hit" if row is None else "miss")
 
     if row is None:
         log.debug(
