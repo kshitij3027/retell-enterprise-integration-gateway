@@ -90,6 +90,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y postgresql-client
           PGPASSWORD=reig psql -h localhost -U reig -d reig -f migrations/0001_initial.sql
           PGPASSWORD=reig psql -h localhost -U reig -d reig -f migrations/0002_api_keys_bootstrap_policy.sql
+          PGPASSWORD=reig psql -h localhost -U reig -d reig -f migrations/0003_pgcrypto_helpers.sql
       - name: pytest
         run: pytest -q
 

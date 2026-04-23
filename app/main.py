@@ -23,7 +23,7 @@ from app.config import get_settings
 from app.logging import configure_logging, get_logger
 from app.middleware import TenantResolutionMiddleware
 from app.pii import init_pii
-from app.routes import admin, health, webhooks
+from app.routes import admin, health, oauth, webhooks
 
 log = get_logger(__name__)
 
@@ -77,4 +77,5 @@ app.add_middleware(TenantResolutionMiddleware)
 # --- Routers ---
 app.include_router(health.router)
 app.include_router(admin.router)
+app.include_router(oauth.router)
 app.include_router(webhooks.router)

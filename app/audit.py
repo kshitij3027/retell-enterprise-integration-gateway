@@ -65,6 +65,11 @@ WEBHOOK_RECEIVED_CALL_ANALYZED: Final[str] = "webhook.received.call_analyzed"
 WEBHOOK_RECEIVED_UNKNOWN: Final[str] = "webhook.received.unknown"
 WEBHOOK_RECEIVED_MALFORMED_JSON: Final[str] = "webhook.received.malformed_json"
 
+# Adapter upsert outcomes (C7).
+ADAPTER_UPSERT_SUCCESS: Final[str] = "adapter.upsert.success"
+ADAPTER_UPSERT_EXHAUSTED: Final[str] = "adapter.upsert.exhausted"
+ADAPTER_UPSERT_PERMANENT: Final[str] = "adapter.upsert.permanent"
+
 
 async def write_audit(
     conn: asyncpg.Connection,
