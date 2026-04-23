@@ -42,8 +42,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: mypy
-        # adapters/ lands in C5; for now restrict strict check to app/.
-        run: mypy --strict app/
+        # C5: adapters/ now ships; CR-11 requires mypy --strict across both.
+        run: mypy --strict app/ adapters/
 
   test:
     name: pytest

@@ -331,10 +331,13 @@ async def retell_webhook(
             source_ip,
         )
         # The ONLY event that fires the downstream pipeline (CR-4).
+        # Thread the pool in explicitly (no late-import of app.main) so the
+        # pipeline is unit-testable by just calling it with a fake pool.
         background_tasks.add_task(
             process_call_analyzed,
             tenant_id,
             payload.call,
+            pool,
         )
     else:
         background_tasks.add_task(

@@ -26,8 +26,8 @@ warn_unused_ignores = true
 warn_return_any = true
 no_implicit_optional = true
 ignore_missing_imports = true
-# adapters/ lands in C5 — don't fail on its absence.
-files = ["app"]
+# C5: adapters/ ships now; mypy --strict enforces the Protocol on both.
+files = ["app", "adapters"]
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]

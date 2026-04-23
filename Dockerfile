@@ -29,8 +29,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 RUN python -m spacy download en_core_web_lg
 
 # --- Application source ---
-# `adapters/` does not exist in C1 (lands in C5) — guarded copy so build works.
+# C5: `adapters/` ships alongside `app/` — CRMAdapter Protocol + Salesforce
+# skeleton + ServiceNow stub live here (CR-11).
 COPY app/ ./app/
+COPY adapters/ ./adapters/
 COPY migrations/ ./migrations/
 COPY tests/ ./tests/
 COPY scripts/ ./scripts/
