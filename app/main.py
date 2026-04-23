@@ -1,14 +1,15 @@
 """FastAPI application factory.
 
-Responsibilities as of C3:
+Responsibilities as of C6:
   * configure structured logging
   * open an asyncpg pool on startup, close on shutdown
+  * build the Presidio PII engines (CR-10)
   * install the TenantResolutionMiddleware (CR-5)
   * mount the /healthz + /readyz router
   * mount the /admin router (tenant + API-key management)
   * mount the /webhooks/retell router (signature verify — CR-1, CR-2)
 
-Dedup + routing + PII + adapter dispatch are added in C4+.
+OAuth + OTel + inbound hydration land in C7..C9.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.logging import configure_logging, get_logger
 from app.middleware import TenantResolutionMiddleware
+from app.pii import init_pii
 from app.routes import admin, health, webhooks
 
 log = get_logger(__name__)
@@ -47,6 +49,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.db_pool = pool
     log.info("startup.pool_ready", min_size=2, max_size=10)
+
+    # PII engines — built once at startup so the first webhook doesn't
+    # eat the spaCy model-load cost (which would blow the 2 s SLA).
+    # /readyz reports false until init_pii() returns.
+    init_pii()
 
     try:
         yield

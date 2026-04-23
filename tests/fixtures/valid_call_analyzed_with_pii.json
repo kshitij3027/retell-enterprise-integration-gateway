@@ -1,0 +1,10 @@
+{
+  "event": "call_analyzed",
+  "call": {
+    "call_id": "call_pii_001",
+    "from_number": "+14155551234",
+    "to_number": "+14155559876",
+    "agent_id": "agent_pii",
+    "transcript": "Hello, my SSN is 521-45-6789, my email is jane.doe@example.com, and my card number is 4111 1111 1111 1111."
+  }
+}

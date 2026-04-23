@@ -1,8 +1,16 @@
 # REIG — FastAPI gateway image.
 # Pins Python 3.12-slim; installs build deps for psycopg/asyncpg; bakes the
-# spaCy en_core_web_lg model into the image layer so Presidio has zero cold
+# spaCy en_core_web_sm model into the image layer so Presidio has zero cold
 # start at first request. The CMD is deliberately omitted — docker-compose
 # supplies `uvicorn app.main:app ...` so we can override it in tests.
+#
+# Why en_core_web_sm (~15 MB) instead of en_core_web_lg (~560 MB):
+# our default REIG_PII_ENTITIES (PHONE_NUMBER, US_SSN, EMAIL_ADDRESS,
+# CREDIT_CARD) are all pattern-based — the spaCy NER model is only
+# load-bearing for PERSON/LOCATION/ORGANIZATION entities (not in our
+# default list). Smaller model = faster cold boot for CR-16 / SC-11.
+# A production deployment that adds NER entities can override via
+# REIG_PII_SPACY_MODEL=en_core_web_lg.
 
 FROM python:3.12-slim
 
@@ -23,10 +31,12 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# --- Pre-bake the 560 MB spaCy model into the image layer ---
+# --- Pre-bake the small spaCy model into the image layer ---
 # Without this, first Presidio call would download at runtime and fail in
-# an air-gapped demo. This is the single heaviest build step (~2-4 min).
-RUN python -m spacy download en_core_web_lg
+# an air-gapped demo. `en_core_web_sm` keeps the build step bounded to
+# ~30 s instead of the 2-4 min `en_core_web_lg` would cost; see the
+# header comment for the rationale.
+RUN python -m spacy download en_core_web_sm
 
 # --- Application source ---
 # C5: `adapters/` ships alongside `app/` — CRMAdapter Protocol + Salesforce

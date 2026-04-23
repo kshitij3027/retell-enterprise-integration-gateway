@@ -79,6 +79,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Install spaCy model for Presidio
+        # C6: Presidio's AnalyzerEngine constructs a spaCy NLP engine at
+        # startup. en_core_web_sm is ~15 MB and ships the pattern-based
+        # recognizers we actually use (SSN, email, phone, credit card).
+        # See app/pii.py for the accuracy rationale.
+        run: python -m spacy download en_core_web_sm
       - name: Apply migrations
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
