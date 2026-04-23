@@ -46,7 +46,7 @@ from tenacity import (
 )
 
 from adapters import register
-from adapters.base import LeadUpsertPayload, UpsertResult
+from adapters.base import LeadUpsertPayload, LookupResult, UpsertResult
 from adapters.errors import PermanentError, TransientError
 from app.logging import get_logger
 from app.tracing import get_tracer
@@ -438,3 +438,79 @@ class SalesforceAdapter:
             lead_source="Retell Voice Agent",
             description=transcript,
         )
+
+    async def lookup_by_phone(self, phone: str) -> LookupResult | None:
+        """SOQL lookup of a Lead matching the caller's phone number (CR-12).
+
+        Normalises to E.164 if possible (handles the `+1-415-555-1234`
+        variants Retell can ship) and queries
+        `SELECT Id, FirstName, LastName, LastActivityDate FROM Lead
+         WHERE Phone = :phone LIMIT 1`.
+
+        Returns the first match as a `LookupResult`, or None when no
+        match is found. Propagates httpx / auth errors — the caller
+        (`/webhooks/retell/{tenant}/inbound`) wraps the whole thing in
+        `asyncio.wait_for` so a slow SFDC doesn't blow the 2 s SLA.
+        """
+        try:
+            import phonenumbers
+
+            parsed = phonenumbers.parse(phone, "US")
+            normalised = phonenumbers.format_number(
+                parsed, phonenumbers.PhoneNumberFormat.E164
+            )
+        except Exception:  # noqa: BLE001 — bad phone → pass through raw
+            normalised = phone
+
+        if self._access_token is None or self._instance_url is None:
+            await self.authenticate()
+        assert self._access_token is not None and self._instance_url is not None
+
+        client = await self._http()
+        soql = (
+            "SELECT Id, FirstName, LastName, LastActivityDate "
+            f"FROM Lead WHERE Phone = '{normalised}' LIMIT 1"
+        )
+        url = (
+            f"{self._instance_url}/services/data/"
+            f"{self.settings.sfdc_api_version}/query"
+        )
+        with _tracer.start_as_current_span("sfdc.lookup.by_phone") as span:
+            span.set_attribute("tenant.id", str(self.tenant_id))
+            span.set_attribute("sfdc.phone_lookup", normalised)
+            resp = await client.get(
+                url,
+                params={"q": soql},
+                headers={"Authorization": f"Bearer {self._access_token}"},
+            )
+            span.set_attribute("http.status_code", resp.status_code)
+            if resp.status_code != 200:
+                span.set_attribute("sfdc.error", resp.text[:200])
+                return None
+            records = resp.json().get("records", [])
+            if not records:
+                span.set_attribute("sfdc.match_count", 0)
+                return None
+            span.set_attribute("sfdc.match_count", len(records))
+            r0 = records[0]
+            lead_id = r0.get("Id", "")
+            span.set_attribute("lead_id", lead_id)
+
+            last_activity_raw = r0.get("LastActivityDate")
+            last_activity = None
+            if isinstance(last_activity_raw, str) and last_activity_raw:
+                try:
+                    from datetime import date as _date
+
+                    last_activity = _date.fromisoformat(last_activity_raw)
+                except ValueError:
+                    last_activity = None
+
+            return LookupResult(
+                record_id=lead_id,
+                first_name=r0.get("FirstName"),
+                last_name=r0.get("LastName"),
+                last_activity_date=last_activity,
+                open_cases=0,
+                account_status=None,
+            )
