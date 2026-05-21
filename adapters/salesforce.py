@@ -245,13 +245,14 @@ class SalesforceAdapter:
         """Map SFDC response → (kind | None, body_detail).
 
         Returns:
-          (None, None)                    on 201 / 204 (happy path).
+          (None, None)                    on 200 / 201 / 204 (happy path).
+                                          200 is "updated with body".
           ("invalid_session", detail)     on 401 + INVALID_SESSION_ID in body.
           ("transient", detail)           on 429 or 5xx.
           ("permanent", detail)           on 4xx other than the above.
         """
         sc = resp.status_code
-        if sc in (201, 204):
+        if sc in (200, 201, 204):
             return None, None
         body_text = resp.text[:500]
         if sc == 401 and "INVALID_SESSION_ID" in body_text:
@@ -305,7 +306,8 @@ class SalesforceAdapter:
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             span.set_attribute("http.status_code", resp.status_code)
-            if resp.status_code == 201:
+            if resp.status_code in (200, 201):
+                # 200 = "updated with body" upsert response from SFDC.
                 try:
                     record_id = resp.json().get("id") or payload.external_call_id
                 except Exception:  # noqa: BLE001 — opportunistic attribute
@@ -318,7 +320,7 @@ class SalesforceAdapter:
     def _parse_success(
         self, resp: httpx.Response, external_call_id: str
     ) -> UpsertResult:
-        """Extract UpsertResult from a 201 or 204 response."""
+        """Extract UpsertResult from a 200, 201, or 204 response."""
         if resp.status_code == 201:
             try:
                 body = resp.json()
@@ -328,6 +330,16 @@ class SalesforceAdapter:
                 body.get("id") or body.get("Id") or external_call_id
             )
             return UpsertResult(record_id=record_id, status="created")
+        if resp.status_code == 200:
+            # 200 = "updated with body" upsert response (created:false).
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {}
+            record_id = (
+                body.get("id") or body.get("Id") or external_call_id
+            )
+            return UpsertResult(record_id=record_id, status="updated")
         # 204 — empty body; use external_call_id as the handle.
         return UpsertResult(record_id=external_call_id, status="updated")
 

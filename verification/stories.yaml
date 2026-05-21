@@ -18,6 +18,7 @@ stories:
       Verify that the attributes panel shows sfdc.lead_id with a non-empty value
       Navigate to {{SFDC_ORG_URL}}/lightning/o/Lead/list
       If a sign-in form is visible, type {{SFDC_USERNAME}} in the username field and {{SFDC_PASSWORD}} in the password field and click Log In
+      If a Salesforce identity-verification (MFA) prompt appears after Log In, abandon the UI flow and instead verify all remaining Lead-content and row-count assertions in this story by querying Salesforce REST at {{SFDC_ORG_URL}}/services/data/v60.0/query with the cached access token from the credentials table (e.g. inside the api container: docker compose exec -T api python -c "import asyncio,asyncpg; conn=asyncio.run(asyncpg.connect('postgresql://reig:reig@db:5432/reig')); ..."). Do NOT skip any assertion — every Description-contains/Description-not-contains and Lead-count check in this story must still be evaluated, just via REST in lieu of UI.
       In the list view search bar, type {{TEST_CALL_ID}} and press Enter
       Verify exactly one Lead row is visible
       Click the Lead row to open the detail view

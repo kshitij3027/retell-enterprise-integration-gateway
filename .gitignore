@@ -153,3 +153,6 @@ CLAUDE.md
 # Per-operator bowser-qa config; only the checked-in .env.example template
 # should exist in git.
 verification/.env
+# /ui-review per-run screenshot artifacts and playwright-cli session state.
+screenshots/
+.playwright-cli/
